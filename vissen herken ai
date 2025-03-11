@@ -1,0 +1,81 @@
+import os
+import sqlite3
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
+from flask import Flask, request, jsonify, g
+from werkzeug.utils import secure_filename
+
+# Flask-app initialiseren
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads/'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Database-instellingen
+DATABASE = 'fish_database.db'
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+    return db
+
+def create_database():
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fish (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE,
+                description TEXT,
+                image_url TEXT
+            )
+        ''')
+        db.commit()
+
+# Voeg extra zoetwatervissen toe
+def insert_fish_data():
+    fish_data = [
+        ('Snoek', 'Roofvis met scherpe tanden.', 'https://example.com/snoek.jpg'),
+        ('Baars', 'Kleine roofvis met strepen.', 'https://example.com/baars.jpg'),
+        ('Karper', 'Grote zoetwatervis.', 'https://example.com/karper.jpg'),
+        ('Meerval', 'Grote vis met baarddraden.', 'https://example.com/meerval.jpg'),
+        ('Voorn', 'Kleine vis die vaak voorkomt.', 'https://example.com/voorn.jpg'),
+        ('Paling', 'Langwerpige vis die in zoet water leeft.', 'https://example.com/paling.jpg'),
+        ('Steur', 'Oude vissoort met beenplaten.', 'https://example.com/steur.jpg'),
+        ('Zeelt', 'Goudbruine zoetwatervis.', 'https://example.com/zeelt.jpg'),
+        ('Winde', 'Sterke zoetwatervis.', 'https://example.com/winde.jpg'),
+        ('Rietvoorn', 'Slanke vis met rode vinnen.', 'https://example.com/rietvoorn.jpg')
+    ]
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        for fish in fish_data:
+            try:
+                cursor.execute('INSERT INTO fish (name, description, image_url) VALUES (?, ?, ?)', fish)
+            except sqlite3.IntegrityError:
+                pass  # Skip als de vis al bestaat
+        db.commit()
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+# API om vissen op te halen
+@app.route('/fish', methods=['GET'])
+def get_fish():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT name, description, image_url FROM fish")
+    fish_list = cursor.fetchall()
+    return jsonify({"fish": [{"name": f[0], "description": f[1], "image_url": f[2]} for f in fish_list]})
+
+# Zet de server klaar voor online gebruik
+if __name__ == '__main__':
+    create_database()
+    insert_fish_data()
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
